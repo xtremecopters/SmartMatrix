@@ -35,7 +35,7 @@ static bitmap_font *font = (bitmap_font *) &apple3x5;
 
 // coordinates based on screen position, which is between 0-localWidth/localHeight
 void SmartMatrix::getPixel(uint8_t x, uint8_t y, rgb24 *xyPixel) {
-    copyRgb24(*xyPixel, currentRefreshBufferPtr[y][x]);
+    *xyPixel =  currentRefreshBufferPtr[y][x];
 }
 
 rgb24 *SmartMatrix::getRefreshRow(uint8_t y) {
@@ -48,7 +48,7 @@ const rgb24 SmartMatrix::readPixel(int16_t x, int16_t y) const {
 
     // check for out of bounds coordinates
     if (x < 0 || y < 0 || x >= screenConfig.localWidth || y >= screenConfig.localHeight)
-        return (rgb24){0, 0, 0};
+        return rgb24(0, 0, 0);
 
     // map pixel into hardware buffer before writing
     if (screenConfig.rotation == rotation0) {
@@ -90,7 +90,7 @@ void SmartMatrix::drawPixel(int16_t x, int16_t y, const rgb24& color) {
         hwy = (MATRIX_HEIGHT - 1) - x;
     }
 
-    copyRgb24(currentDrawBufferPtr[hwy][hwx], color);
+    currentDrawBufferPtr[hwy][hwx] = color;
 }
 
 #define SWAPint(X,Y) { \
@@ -104,7 +104,7 @@ void SmartMatrix::drawHardwareHLine(uint8_t x0, uint8_t x1, uint8_t y, const rgb
     int i;
 
     for (i = x0; i <= x1; i++) {
-        copyRgb24(currentDrawBufferPtr[y][i], color);
+        currentDrawBufferPtr[y][i] = color;
     }
 }
 
@@ -113,7 +113,7 @@ void SmartMatrix::drawHardwareVLine(uint8_t x, uint8_t y0, uint8_t y1, const rgb
     int i;
 
     for (i = y0; i <= y1; i++) {
-        copyRgb24(currentDrawBufferPtr[i][x], color);
+        currentDrawBufferPtr[i][x] = color;
     }
 }
 

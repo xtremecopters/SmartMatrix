@@ -65,11 +65,40 @@ typedef enum fontChoices {
 
 
 // color
-typedef struct rgb24 {
-    uint8_t red;
-    uint8_t green;
-    uint8_t blue;
-} rgb24;
+typedef struct rgb24
+{
+	uint8_t red;
+	uint8_t green;
+	uint8_t blue;
+
+
+	rgb24(uint8_t red = 0, uint8_t green = 0, uint8_t blue = 0)
+		: red(red), green(green), blue(blue)
+	{}
+
+
+	// assign
+	rgb24& operator=(const rgb24 &rv)
+	{
+		red		= rv.red;
+		green	= rv.green;
+		blue	= rv.blue;
+
+		return *this;
+	}
+
+	// compare
+	bool operator==(const rgb24 &rv)
+	{
+		return (red   == rv.red)   &&
+			   (green == rv.green) &&
+			   (blue  == rv.blue);
+	}
+	bool operator!=(const rgb24 &rv)
+	{
+		return !(*this == rv);
+	}
+}  __attribute__ ((aligned(1), packed)) rgb24;
 
 
 #if COLOR_DEPTH_RGB > 24
@@ -84,8 +113,6 @@ typedef enum colorCorrectionModes {
     cc12,
     cc48
 } colorCorrectionModes;
-
-#define RGB24_ISEQUAL(a, b)     ((a.red == b.red) && (a.green == b.green) && (a.blue == b.blue))
 
 
 // config
@@ -204,9 +231,6 @@ private:
     // configuration helper functions
     static void calculateTimerLut(void);
     static void calculateBackgroundLUT(void);
-
-    // color functions (replace with class and copy constructor?)
-    static void copyRgb24(rgb24 & dst, const rgb24 & src);
 
     // configuration
     static colorCorrectionModes _ccmode;

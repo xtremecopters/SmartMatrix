@@ -17,7 +17,7 @@ SmartMatrix_32x32	KEYWORD1
 #######################################
 # Methods and Functions (KEYWORD2)
 #######################################
-RGB24_ISEQUAL		KEYWORD2
+
 #	Drawing	Methods
 begin	KEYWORD2
 swapBuffers	KEYWORD2

@@ -224,7 +224,7 @@ void SmartMatrix::setScrollFont(fontChoices newFont) {
 }
 
 void SmartMatrix::setScrollColor(const rgb24 & newColor) {
-    copyRgb24(textcolor, newColor);
+    textcolor = newColor;
 }
 
 void SmartMatrix::setScrollOffsetFromTop(int offset) {
@@ -394,7 +394,7 @@ bool SmartMatrix::getForegroundPixel(uint8_t hardwareX, uint8_t hardwareY, rgb24
     uint32_t bitmask = 0x01 << (31 - localScreenX);
 
     if (foregroundBitmap[foregroundRefreshBuffer][localScreenY][0] & bitmask) {
-        copyRgb24(*xyPixel, textcolor);
+        *xyPixel = textcolor;
         return true;
     }
 
