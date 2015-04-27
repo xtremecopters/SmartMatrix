@@ -26,7 +26,7 @@
 // depends on letters in font->Index table being arranged in ascending order
 // save location of last lookup to speed up repeated lookups of the same letter
 // TODO: use successive approximation to located index faster
-int getBitmapFontLocation(unsigned char letter, const bitmap_font *font) {
+int SmartMatrix::getBitmapFontLocation(unsigned char letter, const bitmap_font *font) {
     static int location = 0;
 
     if(location < 0)
@@ -67,6 +67,17 @@ bool SmartMatrix::getBitmapFontPixelAtXY(unsigned char letter, unsigned char x, 
         return false;
 }
 
+bool SmartMatrix::getBitmapFontPixelAtXY(int location, unsigned char x, unsigned char y, const bitmap_font *font)
+{
+    if (location < 0)
+        return false;
+
+    if (font->Bitmap[(location * font->Height) + y] & (0x80 >> x))
+        return true;
+    else
+        return false;
+}
+
 uint16_t SmartMatrix::getBitmapFontRowAtXY(unsigned char letter, unsigned char y, const bitmap_font *font) {
     int location;
     if (y >= font->Height)
@@ -75,6 +86,15 @@ uint16_t SmartMatrix::getBitmapFontRowAtXY(unsigned char letter, unsigned char y
     location = getBitmapFontLocation(letter, font);
 
     if (location < 0)
+        return 0x0000;
+
+    return(font->Bitmap[(location * font->Height) + y]);
+}
+
+uint16_t SmartMatrix::getBitmapFontRowAtXY(int location, unsigned char y, const bitmap_font *font) {
+    if(y >= font->Height)
+        return 0x0000;
+    if(location < 0)
         return 0x0000;
 
     return(font->Bitmap[(location * font->Height) + y]);

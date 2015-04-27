@@ -743,17 +743,17 @@ void SmartMatrix::drawChar(int16_t x, int16_t y, const rgb24& charColor, char ch
 }
 
 void SmartMatrix::drawString(int16_t x, int16_t y, const rgb24& charColor, const char *text) {
-    int xcnt, ycnt;
+    int xcnt, ycnt, location;
     char character;
 
-    while(*text != '\0' && *text != '\n')
-    {
+    while(*text != '\0' && *text != '\n') {
         character = *text;
         ++text;
 
+        location = getBitmapFontLocation(character, font);
         for (ycnt = 0; ycnt < font->Height; ycnt++) {
             for (xcnt = 0; xcnt < font->Width; xcnt++) {
-                if (getBitmapFontPixelAtXY(character, xcnt, ycnt, font)) {
+                if (getBitmapFontPixelAtXY(location, xcnt, ycnt, font)) {
                     drawPixel(x + xcnt, y + ycnt, charColor);
                 }
             }
@@ -767,17 +767,17 @@ void SmartMatrix::drawString(int16_t x, int16_t y, const rgb24& charColor, const
 
 // draw string while clearing background
 void SmartMatrix::drawString(int16_t x, int16_t y, const rgb24& charColor, const rgb24& backColor, const char *text) {
-    int xcnt, ycnt;
+    int xcnt, ycnt, location;
     char character;
 
-    while(*text != '\0' && *text != '\n')
-    {
+    while(*text != '\0' && *text != '\n') {
         character = *text;
         ++text;
 
+        location = getBitmapFontLocation(character, font);
         for (ycnt = 0; ycnt < font->Height; ycnt++) {
             for (xcnt = 0; xcnt < font->Width; xcnt++) {
-                if (getBitmapFontPixelAtXY(character, xcnt, ycnt, font)) {
+                if (getBitmapFontPixelAtXY(location, xcnt, ycnt, font)) {
                     drawPixel(x + xcnt, y + ycnt, charColor);
                 } else {
                     drawPixel(x + xcnt, y + ycnt, backColor);

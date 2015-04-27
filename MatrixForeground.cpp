@@ -240,7 +240,7 @@ void SmartMatrix::setScrollStartOffsetFromLeft(int offset) {
 // if font size or position changed since the last call, redraw the whole frame
 void SmartMatrix::redrawForeground(void) {
     int j, k;
-    int charPosition, textPosition;
+    int charPosition, textPosition, fontLocation;
     uint8_t charY0, charY1;
 
 
@@ -287,10 +287,14 @@ void SmartMatrix::redrawForeground(void) {
 
         while (textPosition < textlen && charPosition < screenConfig.localWidth) {
             uint32_t tempBitmask;
+
+            // lookup bitmap location for character glyph
+            fontLocation = getBitmapFontLocation(text[textPosition], scrollFont);
+
             // draw character from top to bottom
             for (k = charY0; k < charY1; k++) {
                 // read in uint8, shift it to be in MSB (font is in the top bits of the uint32)
-                tempBitmask = getBitmapFontRowAtXY(text[textPosition], k, scrollFont) << 24;
+                tempBitmask = getBitmapFontRowAtXY(fontLocation, k, scrollFont) << 24;
                 if (charPosition < 0)
                     foregroundBitmap[foregroundRefreshBuffer][j + k - charY0][0] |= tempBitmask << -charPosition;
                 else

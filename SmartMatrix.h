@@ -248,9 +248,12 @@ private:
     static bool swapWithCopy;
 
     // font
+    static int getBitmapFontLocation(unsigned char letter, const bitmap_font *font);
     static bool getBitmapFontPixelAtXY(unsigned char letter, unsigned char x, unsigned char y, const bitmap_font *font);
+    static bool getBitmapFontPixelAtXY(int location, unsigned char x, unsigned char y, const bitmap_font *font);
     const bitmap_font *fontLookup(fontChoices font) const;
     static uint16_t getBitmapFontRowAtXY(unsigned char letter, unsigned char y, const bitmap_font *font);
+    static uint16_t getBitmapFontRowAtXY(int location, unsigned char y, const bitmap_font *font);
 };
 
 #endif
