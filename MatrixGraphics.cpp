@@ -100,7 +100,7 @@ void SmartMatrix::drawPixel(int16_t x, int16_t y, const rgb24& color) {
     }
 
 // x0, x1, and y must be in bounds (0-localWidth/Height), x1 > x0
-void SmartMatrix::drawHardwareHLine(uint8_t x0, uint8_t x1, uint8_t y, const rgb24& color) {
+void SmartMatrix::drawHardwareHLine(uint16_t x0, uint16_t x1, uint16_t y, const rgb24& color) {
     int i;
 
     for (i = x0; i <= x1; i++) {
@@ -109,7 +109,7 @@ void SmartMatrix::drawHardwareHLine(uint8_t x0, uint8_t x1, uint8_t y, const rgb
 }
 
 // x, y0, and y1 must be in bounds (0-localWidth/Height), y1 > y0
-void SmartMatrix::drawHardwareVLine(uint8_t x, uint8_t y0, uint8_t y1, const rgb24& color) {
+void SmartMatrix::drawHardwareVLine(uint16_t x, uint16_t y0, uint16_t y1, const rgb24& color) {
     int i;
 
     for (i = y0; i <= y1; i++) {
@@ -723,7 +723,7 @@ bool SmartMatrix::getBitmapPixelAtXY(uint8_t x, uint8_t y, uint8_t width, uint8_
     int cell = (y * ((width / 8) + 1)) + (x / 8);
 
     uint8_t mask = 0x80 >> (x % 8);
-    return (mask & bitmap[cell]);
+    return (mask & bitmap[cell]) != 0;
 }
 
 void SmartMatrix::setFont(fontChoices newFont) {
@@ -742,15 +742,14 @@ void SmartMatrix::drawChar(int16_t x, int16_t y, const rgb24& charColor, char ch
     }
 }
 
-void SmartMatrix::drawString(int16_t x, int16_t y, const rgb24& charColor, const char text[]) {
-    int xcnt, ycnt, i = 0, offset = 0;
+void SmartMatrix::drawString(int16_t x, int16_t y, const rgb24& charColor, const char *text) {
+    int xcnt, ycnt;
     char character;
 
-    // limit text to 10 chars, why?
-    for (i = 0; i < 10; i++) {
-        character = text[offset++];
-        if (character == '\0')
-            return;
+    while(*text != '\0' && *text != '\n')
+    {
+        character = *text;
+        ++text;
 
         for (ycnt = 0; ycnt < font->Height; ycnt++) {
             for (xcnt = 0; xcnt < font->Width; xcnt++) {
@@ -760,19 +759,21 @@ void SmartMatrix::drawString(int16_t x, int16_t y, const rgb24& charColor, const
             }
         }
         x += font->Width;
+
+        if(x >= screenConfig.localWidth)
+            break;
     }
 }
 
 // draw string while clearing background
-void SmartMatrix::drawString(int16_t x, int16_t y, const rgb24& charColor, const rgb24& backColor, const char text[]) {
-    int xcnt, ycnt, i = 0, offset = 0;
+void SmartMatrix::drawString(int16_t x, int16_t y, const rgb24& charColor, const rgb24& backColor, const char *text) {
+    int xcnt, ycnt;
     char character;
 
-    // limit text to 10 chars, why?
-    for (i = 0; i < 10; i++) {
-        character = text[offset++];
-        if (character == '\0')
-            return;
+    while(*text != '\0' && *text != '\n')
+    {
+        character = *text;
+        ++text;
 
         for (ycnt = 0; ycnt < font->Height; ycnt++) {
             for (xcnt = 0; xcnt < font->Width; xcnt++) {
@@ -784,6 +785,9 @@ void SmartMatrix::drawString(int16_t x, int16_t y, const rgb24& charColor, const
             }
         }
         x += font->Width;
+
+        if(x >= screenConfig.localWidth)
+            break;
     }
 }
 

@@ -222,8 +222,8 @@ private:
     static void setScrollMinMax(void);
 
     // drawing functions not meant for user
-    void drawHardwareHLine(uint8_t x0, uint8_t x1, uint8_t y, const rgb24& color);
-    void drawHardwareVLine(uint8_t x, uint8_t y0, uint8_t y1, const rgb24& color);
+	void drawHardwareHLine(uint16_t x0, uint16_t x1, uint16_t y, const rgb24& color);
+	void drawHardwareVLine(uint16_t x, uint16_t y0, uint16_t y1, const rgb24& color);
     void bresteepline(int16_t x3, int16_t y3, int16_t x4, int16_t y4, const rgb24& color);
     void fillFlatSideTriangleInt(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3, const rgb24& color);
     static bool getBitmapPixelAtXY(uint8_t x, uint8_t y, uint8_t width, uint8_t height, const uint8_t *bitmap);
