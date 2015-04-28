@@ -24,46 +24,17 @@
 #include <string.h>
 #include "SmartMatrix.h"
 
-// FIXME: Most of these variable should be in smartmatrix class (i.e. one per instance of smart matrix, rather than being global)
-// options
-static char text[textLayerMaxStringLength];
-static unsigned char textlen;
-static int scrollcounter = 0;
-
-static rgb24 textcolor = {0xff, 0xff, 0xff};
-static int fontTopOffset = 1;
-static int fontLeftOffset = 1;
-static bool majorScrollFontChange = false;
-
-
-bool hasForeground = false;
-
-// Scrolling
-static ScrollMode scrollmode = bounceForward;
-static unsigned char framesperscroll = 4;
 
 //bitmap size is 32 rows (supporting maximum dimension of screen height in all rotations), by 32 bits
 // double buffered to prevent flicker while drawing
-static uint32_t foregroundBitmap[2][MATRIX_WIDTH][MATRIX_WIDTH / 32];
-const unsigned char foregroundDrawBuffer = 0;
-const unsigned char foregroundRefreshBuffer = 1;
-volatile bool SmartMatrix::foregroundCopyPending = false;
+static uint32_t				foregroundBitmap[2][MATRIX_HEIGHT][MATRIX_WIDTH / 32];
+static uint8_t				foregroundColorLines[2][MATRIX_HEIGHT];  // stores palett index per row
+volatile bool				SmartMatrix::foregroundCopyPending = false;
+static const unsigned char	foregroundDrawBuffer    = 0;
+static const unsigned char	foregroundRefreshBuffer = 1;
+static bool					majorForegroundChange	= false;
+bool						hasForeground			= false;
 
-static const bitmap_font *scrollFont = &apple5x7;
-
-// these variables describe the text bitmap: size, location on the screen, and bounds of where it moves
-static unsigned int textWidth;
-static int scrollMin, scrollMax;
-static int scrollPosition;
-
-// stops the scrolling text on the next refresh
-void SmartMatrix::stopScrollText(void) {
-    // setup conditions for ending scrolling:
-    // scrollcounter is next to zero
-    scrollcounter = 1;
-    // position text at the end of the cycle
-    scrollPosition = scrollMin;
-}
 
 void SmartMatrix::clearForeground(void) {
     memset(foregroundBitmap[foregroundDrawBuffer], 0x00, sizeof(foregroundBitmap[0]));
@@ -84,6 +55,7 @@ void SmartMatrix::handleForegroundDrawingCopy(void) {
         return;
 
     memcpy(foregroundBitmap[foregroundRefreshBuffer], foregroundBitmap[foregroundDrawBuffer], sizeof(foregroundBitmap[0]));
+    memcpy(foregroundColorLines[foregroundRefreshBuffer], foregroundColorLines[foregroundDrawBuffer], sizeof(foregroundColorLines[0]));
     redrawForeground();
     foregroundCopyPending = false;
 }
@@ -105,7 +77,7 @@ bitmap_font *foregroundfont = (bitmap_font *) &apple3x5;
 
 void SmartMatrix::setForegroundFont(fontChoices newFont) {
     foregroundfont = (bitmap_font *)fontLookup(newFont);
-    majorScrollFontChange = true;
+    majorForegroundChange = true;
 }
 
 void SmartMatrix::drawForegroundChar(int16_t x, int16_t y, char character, bool opaque) {
@@ -149,21 +121,62 @@ void SmartMatrix::drawForegroundMonoBitmap(int16_t x, int16_t y, uint8_t width, 
     }
 }
 
-// returns 0 if stopped
-// returns positive number indicating number of loops left if running
-// returns -1 if continuously scrolling
-int SmartMatrix::getScrollStatus(void) const {
-    return scrollcounter;
+
+TextScroller::TextScroller(SmartMatrix *matrix)
+ :	matrix(matrix)
+{
 }
 
-void SmartMatrix::setScrollMinMax(void) {
-   switch (scrollmode) {
+void TextScroller::scrollText(const char inputtext[], int numScrolls) {
+    int length = strlen((const char *)inputtext);
+    text = inputtext;
+    textLen = length;
+    scrollCounter = numScrolls;
+
+    textWidth = (textlen * scrollFont->Width) - 1;
+
+    setScrollMinMax();
+}
+
+// TODO: recompute stuff after changing mode, font, etc
+void TextScroller::setScrollMode(ScrollMode mode) {
+    scrollMode = mode;
+}
+
+void TextScroller::setScrollSpeed(unsigned char pixels_per_second) {
+    framesPerScroll = (MATRIX_REFRESH_RATE) / pixels_per_second;
+}
+
+void TextScroller::setScrollFont(fontChoices newFont) {
+    scrollFont = matrix->fontLookup(newFont);
+}
+
+void TextScroller::setScrollOffsetFromTop(int offset) {
+    fontTopOffset = offset;
+    majorForegroundChange = true;
+}
+
+void TextScroller::setScrollStartOffsetFromLeft(int offset) {
+    fontLeftOffset = offset;
+}
+
+// stops the scrolling text on the next refresh
+void TextScroller::stopScrollText(void) {
+    // setup conditions for ending scrolling:
+    // scrollcounter is next to zero
+    scrollCounter = 1;
+    // position text at the end of the cycle
+    scrollPosition = scrollMin;
+}
+
+void TextScroller::setScrollMinMax(void) {
+   switch (scrollMode) {
     case wrapForward:
     case bounceForward:
     case bounceReverse:
     case wrapForwardFromLeft:
         scrollMin = -textWidth;
-        scrollMax = screenConfig.localWidth;
+        scrollMax = SmartMatrix::screenConfig.localWidth;
 
         scrollPosition = scrollMax;
 
@@ -184,67 +197,70 @@ void SmartMatrix::setScrollMinMax(void) {
 
 }
 
-void SmartMatrix::scrollText(const char inputtext[], int numScrolls) {
-    int length = strlen((const char *)inputtext);
-    if (length > textLayerMaxStringLength)
-        length = textLayerMaxStringLength;
-    strncpy(text, (const char *)inputtext, length);
-    textlen = length;
-    scrollcounter = numScrolls;
+bool TextScroller::updateScrolling()
+{
+    bool resetScrolls = false;
 
-    textWidth = (textlen * scrollFont->Width) - 1;
+    // return if not ready to update
+	if(!scrollCounter || ++frameCurrent <= framesPerScroll)
+		return false;
 
-    setScrollMinMax();
- }
+    frameCurrent = 0;
 
-//Updates the text that is currently scrolling to the new value
-//Useful for a clock display where the time changes.
-void SmartMatrix::updateScrollText(const char inputtext[]){
-    int length = strlen((const char *)inputtext);
-    if (length > textLayerMaxStringLength)
-        length = textLayerMaxStringLength;
-    strncpy(text, (const char *)inputtext, length);
-    textlen = length;
-    textWidth = (textlen * scrollFont->Width) - 1;
+    switch (scrollMode) {
+    case wrapForward:
+    case wrapForwardFromLeft:
+        scrollPosition--;
+        if(scrollPosition <= scrollMin) {
+            scrollPosition = scrollMax;
+            if(scrollCounter > 0) scrollCounter--;
+        }
+        break;
 
-    setScrollMinMax();
+    case bounceForward:
+        scrollPosition--;
+        if (scrollPosition <= scrollMin) {
+            scrollMode = bounceReverse;
+            if (scrollCounter > 0) scrollCounter--;
+        }
+        break;
+
+    case bounceReverse:
+        scrollPosition++;
+        if (scrollPosition >= scrollMax) {
+            scrollMode = bounceForward;
+            if (scrollCounter > 0) scrollCounter--;
+        }
+        break;
+
+    default:
+    case stopped:
+        scrollPosition = fontLeftOffset;
+        resetScrolls = true;
+        break;
+    }
+
+    // done scrolling - move text off screen and disable
+    if (!scrollCounter) {
+        resetScrolls = true;
+    }
+
+    // for now, fill the bitmap fresh with each update
+    // TODO: reset only when necessary, and update just the pixels that need it
+    resetScrolls = true;
+	return resetScrolls;
 }
 
-// TODO: recompute stuff after changing mode, font, etc
-void SmartMatrix::setScrollMode(ScrollMode mode) {
-    scrollmode = mode;
-}
-
-void SmartMatrix::setScrollSpeed(unsigned char pixels_per_second) {
-    framesperscroll = (MATRIX_REFRESH_RATE * 1.0) / pixels_per_second;
-}
-
-void SmartMatrix::setScrollFont(fontChoices newFont) {
-    scrollFont = fontLookup(newFont);
-}
-
-void SmartMatrix::setScrollColor(const rgb24 & newColor) {
-    textcolor = newColor;
-}
-
-void SmartMatrix::setScrollOffsetFromTop(int offset) {
-    fontTopOffset = offset;
-    majorScrollFontChange = true;
-}
-
-void SmartMatrix::setScrollStartOffsetFromLeft(int offset) {
-    fontLeftOffset = offset;
-}
-
-
-// if font size or position changed since the last call, redraw the whole frame
-void SmartMatrix::redrawForeground(void) {
+bool TextScroller::drawFramebuffer(size_t id)
+{
     int j, k;
     int charPosition, textPosition, fontLocation;
     uint8_t charY0, charY1;
 
 
-    for (j = 0; j < screenConfig.localHeight; j++) {
+	hasForeground = false;
+
+    for (j = 0; j < SmartMatrix::screenConfig.localHeight; j++) {
 
         // skip rows without text
         if (j < fontTopOffset || j >= fontTopOffset + scrollFont->Height)
@@ -265,27 +281,15 @@ void SmartMatrix::redrawForeground(void) {
         // find rows within character bitmap that will be drawn (0-font->height unless text is partially off screen)
         charY0 = j - fontTopOffset;
 
-        if (screenConfig.localHeight < fontTopOffset + scrollFont->Height) {
-            charY1 = screenConfig.localHeight - fontTopOffset;
+        if (SmartMatrix::screenConfig.localHeight < (fontTopOffset + scrollFont->Height))
+		{
+            charY1 = SmartMatrix::screenConfig.localHeight - fontTopOffset;
         } else {
             charY1 = scrollFont->Height;
         }
 
-        /* TODO: some edge cases could end up with unwanted drawing to the screen, e.g. foregrounddrawing call,
-         * then scrolling text change before displayForegroundDrawing() call would show drawing before intended
-         */
-        if(majorScrollFontChange) {
-            // clear full refresh buffer and copy background over
-            memset(foregroundBitmap[foregroundRefreshBuffer], 0x00, sizeof(foregroundBitmap[0]));
-            memcpy(foregroundBitmap[foregroundRefreshBuffer], foregroundBitmap[foregroundDrawBuffer], sizeof(foregroundBitmap[0]));
-            majorScrollFontChange = false;
-        }
 
-        // clear rows used by font before drawing on top
-        for (k = 0; k < charY1 - charY0; k++)
-            foregroundBitmap[foregroundRefreshBuffer][j + k][0] = 0x00;
-
-        while (textPosition < textlen && charPosition < screenConfig.localWidth) {
+        while (textPosition < textlen && charPosition < SmartMatrix::screenConfig.localWidth) {
             uint32_t tempBitmask;
 
             // lookup bitmap location for character glyph
@@ -299,6 +303,9 @@ void SmartMatrix::redrawForeground(void) {
                     foregroundBitmap[foregroundRefreshBuffer][j + k - charY0][0] |= tempBitmask << -charPosition;
                 else
                     foregroundBitmap[foregroundRefreshBuffer][j + k - charY0][0] |= tempBitmask >> charPosition;
+
+                if(tempBitmask)
+                    foregroundColorLines[foregroundRefreshBuffer][j + k - charY0] = (uint8_t)id;
             }
 
             // get set up for next character
@@ -308,64 +315,48 @@ void SmartMatrix::redrawForeground(void) {
 
         j += (charY1 - charY0) - 1;
     }
+
+	return hasForeground;
+}
+
+
+// if font size or position changed since the last call, redraw the whole frame
+void SmartMatrix::redrawForeground(void)
+{
+	// clear framebuffer
+	memset(&foregroundBitmap[foregroundRefreshBuffer][0][0], 0, sizeof(foregroundBitmap[0]));
+	memset(&foregroundColorLines[foregroundRefreshBuffer][0], 0, sizeof(foregroundColorLines[0]));
+	hasForeground = false;
+
+	//
+	for(size_t i=MATRIX_SCROLLERS; i>0; --i)
+	{
+		TextScroller &scroll = scrollers[i -1];
+
+		if(!scroll.scrollCounter)
+			continue;
+
+		if(scroll.drawFramebuffer(i -1))
+			hasForeground = true;
+	}
 }
 
 // called once per frame to update foreground (virtual) bitmap
-// function needs major efficiency improvments
-void SmartMatrix::updateForeground(void) {
-    bool resetScrolls = false;
-    static unsigned char currentframe = 0;
+void SmartMatrix::updateForeground(void)
+{
+	bool doRedraw = false;
 
-    // return if not ready to update
-    if (!scrollcounter || ++currentframe <= framesperscroll)
-        return;
 
-    currentframe = 0;
+	for(size_t i=MATRIX_SCROLLERS; i>0; --i)
+	{
+		TextScroller &scroll = scrollers[i -1];
 
-    switch (scrollmode) {
-    case wrapForward:
-    case wrapForwardFromLeft:
-        scrollPosition--;
-        if (scrollPosition <= scrollMin) {
-            scrollPosition = scrollMax;
-            if (scrollcounter > 0) scrollcounter--;
-        }
-        break;
+		if(scroll.updateScrolling())
+			doRedraw = true;
+	}
 
-    case bounceForward:
-        scrollPosition--;
-        if (scrollPosition <= scrollMin) {
-            scrollmode = bounceReverse;
-            if (scrollcounter > 0) scrollcounter--;
-        }
-        break;
-
-    case bounceReverse:
-        scrollPosition++;
-        if (scrollPosition >= scrollMax) {
-            scrollmode = bounceForward;
-            if (scrollcounter > 0) scrollcounter--;
-        }
-        break;
-
-    default:
-    case stopped:
-        scrollPosition = fontLeftOffset;
-        resetScrolls = true;
-        break;
-    }
-
-    // done scrolling - move text off screen and disable
-    if (!scrollcounter) {
-        resetScrolls = true;
-    }
-
-    // for now, fill the bitmap fresh with each update
-    // TODO: reset only when necessary, and update just the pixels that need it
-    resetScrolls = true;
-    if (resetScrolls) {
-        redrawForeground();
-    }
+	if(doRedraw)
+		redrawForeground();
 }
 
 // returns true and copies color to xyPixel if pixel is opaque, returns false if not
@@ -395,12 +386,20 @@ bool SmartMatrix::getForegroundPixel(uint8_t hardwareX, uint8_t hardwareY, rgb24
         return false;
     };
 
-    uint32_t bitmask = 0x01 << (31 - localScreenX);
+    uint8_t panelIndex = localScreenX >> 5;
+    uint8_t panelScreenX = localScreenX - (panelIndex * 32);
+    uint32_t bitmask = 0x01 << (31 - panelScreenX);
 
-    if (foregroundBitmap[foregroundRefreshBuffer][localScreenY][0] & bitmask) {
-        *xyPixel = textcolor;
-        return true;
-    }
+	if(foregroundBitmap[foregroundRefreshBuffer][localScreenY][panelIndex] & bitmask)
+	{
+		size_t i = foregroundColorLines[foregroundRefreshBuffer][localScreenY];
+		if(i < MATRIX_SCROLLERS)
+			*xyPixel = scrollers[i].textColor;
+		else
+			*xyPixel = scrollers[0].textColor;
+
+		return true;
+	}
 
     return false;
 }

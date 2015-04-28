@@ -94,26 +94,42 @@ typedef struct gpiopair {
 static gpiopair gpiosync;
 
 
-SmartMatrix::SmartMatrix(void) {
+SmartMatrix* SmartMatrix::m_Singleton = NULL;
 
+SmartMatrix::SmartMatrix(void)
+:
+#if MATRIX_SCROLLERS == 1
+    scrollers({this})
+#elif MATRIX_SCROLLERS == 2
+    scrollers({this, this})
+#elif MATRIX_SCROLLERS == 3
+    scrollers({this, this, this})
+#elif MATRIX_SCROLLERS == 4
+    scrollers({this, this, this, this})
+#else
+    #error "MATRIX_SCROLLERS is out of range"
+#endif
+{
+    m_Singleton = this;
 }
 
 INLINE void SmartMatrix::matrixCalculations(void) {
     static unsigned char currentRow = 0;
+	static SmartMatrix &matrix = SmartMatrix::getSingleton();
 
     // only run the loop if there is free space, and fill the entire buffer before returning
     while (!cbIsFull(&dmaBuffer)) {
         // do once-per-frame updates
         if (!currentRow) {
             handleBufferSwap();
-            handleForegroundDrawingCopy();
+            matrix.handleForegroundDrawingCopy();
 
             calculateBackgroundLUT();
 
 #ifdef DEBUG_PINS_ENABLED
     digitalWriteFast(DEBUG_PIN_3, HIGH); // oscilloscope trigger
 #endif
-            updateForeground();
+            matrix.updateForeground();
 #ifdef DEBUG_PINS_ENABLED
     digitalWriteFast(DEBUG_PIN_3, LOW);
 #endif
@@ -362,6 +378,7 @@ void SmartMatrix::begin(void)
 
 extern bool hasForeground;
 INLINE void SmartMatrix::loadMatrixBuffers(unsigned char currentRow) {
+	static SmartMatrix &matrix = SmartMatrix::getSingleton();
     int i, j;
 
     addresspair rowAddressPair;
@@ -397,7 +414,7 @@ INLINE void SmartMatrix::loadMatrixBuffers(unsigned char currentRow) {
         uint8_t temp0red,temp0green,temp0blue,temp1red,temp1green,temp1blue;
 #endif
 
-        if (bHasForeground && getForegroundPixel(i, currentRow, &tempPixel0)) {
+        if (bHasForeground && matrix.getForegroundPixel(i, currentRow, &tempPixel0)) {
             if(bHasCC) {
                 // load foreground pixel with color correction
                 temp0red = colorCorrection(tempPixel0.red);
@@ -423,7 +440,7 @@ INLINE void SmartMatrix::loadMatrixBuffers(unsigned char currentRow) {
             }
         }
 
-        if (bHasForeground && getForegroundPixel(i, currentRow + MATRIX_ROW_PAIR_OFFSET, &tempPixel1)) {
+        if (bHasForeground && matrix.getForegroundPixel(i, currentRow + MATRIX_ROW_PAIR_OFFSET, &tempPixel1)) {
             if(bHasCC) {
                 // load foreground pixel with color correction
                 temp1red = colorCorrection(tempPixel1.red);

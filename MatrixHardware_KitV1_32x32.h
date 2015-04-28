@@ -47,6 +47,9 @@
 // default (10us) is a generous minimum that should work with all Teensy 3.x devices at 48MHz and above
 #define MIN_BLOCK_PERIOD_NS     10000
 
+// set number of text scrollers. 2 for dual-line scroll capability and 4 for four-line scrolling capablity.
+#define MATRIX_SCROLLERS		4
+
 // this section describes how the microcontroller is attached to the display
 
 // defines data bit order from bit 0-7, four times to fit in uint32_t

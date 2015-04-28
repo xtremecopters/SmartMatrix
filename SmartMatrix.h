@@ -30,10 +30,11 @@
 // include one of the MatrixHardware_*.h files here:
 #include "MatrixHardware_KitV1_32x32.h"
 //#include "MatrixHardware_KitV1_16x32.h"
+class SmartMatrix;
+class TextScroller;
 
 
 // scroll text
-const int textLayerMaxStringLength = 100;
 
 typedef enum ScrollMode {
     wrapForward,
@@ -131,6 +132,61 @@ typedef struct screen_config {
 
 #define SMART_MATRIX_CAN_TRIPLE_BUFFER 1
 
+
+// text scroller class
+class TextScroller
+{
+public:
+
+	//char text[textLayerMaxStringLength];
+	unsigned char		framesPerScroll			= 4;
+	unsigned char		frameCurrent			= 0;
+	bool				hasForeground			= false;
+	int					textLen					= 0;
+	int					fontTopOffset			= 1;
+	int					fontLeftOffset			= 1;
+	int					scrollCounter			= 0;
+	int					scrollMin;
+	int					scrollMax;
+	int					scrollPosition;
+
+	const char			*text					= NULL;
+	const bitmap_font	*scrollFont				= &apple5x7;
+	SmartMatrix			*matrix					= NULL;
+
+	rgb24				textColor				= { 0xff, 0xff, 0xff };
+	ScrollMode			scrollMode				= bounceForward;
+
+
+	void setup(bool start);
+
+
+public:
+	TextScroller(SmartMatrix *matrix);
+
+
+    // scroll text
+	void scrollText(const char *text, int numScrolls);
+	void setScrollMode(ScrollMode mode);
+	void setScrollSpeed(unsigned char pixels_per_second);
+	void setScrollFont(fontChoices newFont);
+	void setScrollColor(const rgb24 &newColor)				{ textColor = newColor; }
+	void setScrollOffsetFromTop(int offset);
+	void setScrollStartOffsetFromLeft(int offset);
+	void stopScrollText(void);
+
+	// returns positive number indicating number of loops left if running
+	// returns  0 if stopped
+	// returns -1 if continuously scrolling
+	int  getScrollStatus(void) const						{ return scrollCounter; }
+
+
+	bool updateScrolling();
+	bool drawFramebuffer(size_t id);
+};
+
+
+// matrix display class
 class SmartMatrix {
 public:
     SmartMatrix(void);
@@ -167,18 +223,19 @@ public:
     void setBackBuffer(rgb24 *newBuffer);
     rgb24 *getRealBackBuffer(void);
 
-    // scroll text
-    void scrollText(const char inputtext[], int numScrolls);
-    void setScrollMode(ScrollMode mode);
-    void setScrollSpeed(unsigned char pixels_per_second);
-    void setScrollFont(fontChoices newFont);
-    void setScrollColor(const rgb24 & newColor);
+    // scroll text (backwards compatibility)
+    void scrollText(const char inputtext[], int numScrolls)	{ scrollers[0].scrollText(inputtext, numScrolls); }
+    void setScrollMode(ScrollMode mode)						{ scrollers[0].setScrollMode(mode); }
+    void setScrollSpeed(unsigned char pixels_per_second)	{ scrollers[0].setScrollSpeed(pixels_per_second); }
+    void setScrollFont(fontChoices newFont)					{ scrollers[0].setScrollFont(newFont); }
+    void setScrollColor(const rgb24 & newColor)				{ scrollers[0].setScrollColor(newColor); }
 #define setScrollOffsetFromEdge setScrollOffsetFromTop // backwards compatibility
-    void setScrollOffsetFromTop(int offset);
-    void setScrollStartOffsetFromLeft(int offset);
-    void updateScrollText(const char inputtext[]);
-    void stopScrollText(void);
-    int getScrollStatus(void) const;
+    void setScrollOffsetFromTop(int offset)					{ scrollers[0].setScrollOffsetFromTop(offset); }
+    void setScrollStartOffsetFromLeft(int offset)			{ scrollers[0].setScrollStartOffsetFromLeft(offset); }
+    void stopScrollText(void)								{ scrollers[0].stopScrollText(); }
+    int  getScrollStatus(void) const						{ return scrollers[0].getScrollStatus(); }
+
+	TextScroller& getScroller(size_t index) { return scrollers[index]; }
 
     // foreground drawing
     void clearForeground(void);
@@ -199,6 +256,8 @@ public:
     void setFont(fontChoices newFont);
 
 private:
+	friend class TextScroller;
+
     // enable ISR access to private member variables
     friend void rowCalculationISR(void);
     friend void rowShiftCompleteISR(void);
@@ -215,11 +274,10 @@ private:
     static void getPixel(uint8_t hardwareX, uint8_t hardwareY, rgb24 *xyPixel);
     static rgb24 *getRefreshRow(uint8_t y);
     static void handleBufferSwap(void);
-    static void handleForegroundDrawingCopy(void);
-    static void updateForeground(void);
-    static bool getForegroundPixel(uint8_t x, uint8_t y, rgb24 *xyPixel);
-    static void redrawForeground(void);
-    static void setScrollMinMax(void);
+    void handleForegroundDrawingCopy(void);
+    void updateForeground(void);
+    bool getForegroundPixel(uint8_t x, uint8_t y, rgb24 *xyPixel);
+    void redrawForeground(void);
 
     // drawing functions not meant for user
 	void drawHardwareHLine(uint16_t x0, uint16_t x1, uint16_t y, const rgb24& color);
@@ -240,6 +298,9 @@ private:
     static uint8_t backgroundBrightness;
     static const int dimmingMaximum;
 
+	// scrollers
+	TextScroller scrollers[MATRIX_SCROLLERS];
+
     // keeping track of drawing buffers
     static unsigned char currentDrawBuffer;
     static unsigned char currentRefreshBuffer;
@@ -247,6 +308,10 @@ private:
     static volatile bool foregroundCopyPending;
     static bool swapWithCopy;
 
+	static SmartMatrix *m_Singleton;
+
+
+public:
     // font
     static int getBitmapFontLocation(unsigned char letter, const bitmap_font *font);
     static bool getBitmapFontPixelAtXY(unsigned char letter, unsigned char x, unsigned char y, const bitmap_font *font);
@@ -254,6 +319,9 @@ private:
     const bitmap_font *fontLookup(fontChoices font) const;
     static uint16_t getBitmapFontRowAtXY(unsigned char letter, unsigned char y, const bitmap_font *font);
     static uint16_t getBitmapFontRowAtXY(int location, unsigned char y, const bitmap_font *font);
+
+
+	static SmartMatrix& getSingleton()						{ return *m_Singleton; }
 };
 
 #endif
