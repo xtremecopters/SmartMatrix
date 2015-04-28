@@ -43,7 +43,9 @@
 #define LATCH_TIMER_PULSE_WIDTH_TICKS   NS_TO_TICKS(LATCH_TIMER_PULSE_WIDTH_NS)
 #define TICKS_PER_ROW   (F_BUS/MATRIX_REFRESH_RATE/MATRIX_ROWS_PER_FRAME)
 #define MSB_BLOCK_TICKS     (TICKS_PER_ROW/2)
-#define MIN_BLOCK_PERIOD_TICKS  NS_TO_TICKS(MIN_BLOCK_PERIOD_NS)
+//#define MIN_BLOCK_PERIOD_TICKS  NS_TO_TICKS(MIN_BLOCK_PERIOD_NS)
+// the MIN_BLOCK_PERIOD_NS is configured for one 32px panel
+#define MIN_BLOCK_PERIOD_TICKS  NS_TO_TICKS(MIN_BLOCK_PERIOD_NS * (MATRIX_WIDTH / 32))
 
 DMAChannel dmaOutputAddress(false);
 DMAChannel dmaUpdateAddress(false);
@@ -398,8 +400,7 @@ INLINE void SmartMatrix::loadMatrixBuffers(unsigned char currentRow) {
         matrixUpdateBlocks[freeRowBuffer][j].timerValues.timer_oe = timerLUT[j].timer_oe;
     }
 
-    rgb24 tempPixel0;
-    rgb24 tempPixel1;
+    rgb24 tempPixel;
 
     bool bHasForeground = hasForeground;
     bool bHasCC = SmartMatrix::_ccmode != ccNone;
@@ -414,17 +415,17 @@ INLINE void SmartMatrix::loadMatrixBuffers(unsigned char currentRow) {
         uint8_t temp0red,temp0green,temp0blue,temp1red,temp1green,temp1blue;
 #endif
 
-        if (bHasForeground && matrix.getForegroundPixel(i, currentRow, &tempPixel0)) {
+        if (bHasForeground && matrix.getForegroundPixel(i, currentRow, &tempPixel)) {
             if(bHasCC) {
                 // load foreground pixel with color correction
-                temp0red = colorCorrection(tempPixel0.red);
-                temp0green = colorCorrection(tempPixel0.green);
-                temp0blue = colorCorrection(tempPixel0.blue);
+                temp0red = colorCorrection(tempPixel.red);
+                temp0green = colorCorrection(tempPixel.green);
+                temp0blue = colorCorrection(tempPixel.blue);
             } else {
                 // load foreground pixel without color correction
-                temp0red = tempPixel0.red;
-                temp0green = tempPixel0.green;
-                temp0blue = tempPixel0.blue;
+                temp0red = tempPixel.red;
+                temp0green = tempPixel.green;
+                temp0blue = tempPixel.blue;
             }
         } else {
             if(bHasCC) {
@@ -440,17 +441,17 @@ INLINE void SmartMatrix::loadMatrixBuffers(unsigned char currentRow) {
             }
         }
 
-        if (bHasForeground && matrix.getForegroundPixel(i, currentRow + MATRIX_ROW_PAIR_OFFSET, &tempPixel1)) {
+        if (bHasForeground && matrix.getForegroundPixel(i, currentRow + MATRIX_ROW_PAIR_OFFSET, &tempPixel)) {
             if(bHasCC) {
                 // load foreground pixel with color correction
-                temp1red = colorCorrection(tempPixel1.red);
-                temp1green = colorCorrection(tempPixel1.green);
-                temp1blue = colorCorrection(tempPixel1.blue);
+                temp1red = colorCorrection(tempPixel.red);
+                temp1green = colorCorrection(tempPixel.green);
+                temp1blue = colorCorrection(tempPixel.blue);
             } else {
                 // load foreground pixel without color correction
-                temp1red = tempPixel1.red;
-                temp1green = tempPixel1.green;
-                temp1blue = tempPixel1.blue;
+                temp1red = tempPixel.red;
+                temp1green = tempPixel.green;
+                temp1blue = tempPixel.blue;
             }
         } else {
             if(bHasCC) {

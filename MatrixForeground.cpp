@@ -62,13 +62,15 @@ void SmartMatrix::handleForegroundDrawingCopy(void) {
 
 void SmartMatrix::drawForegroundPixel(int16_t x, int16_t y, bool opaque) {
     uint32_t tempBitmask;
+    uint8_t index = x >> 5;
+    x -= (index * 32);
 
     if(opaque) {
         tempBitmask = 0x80000000 >> x;
-        foregroundBitmap[foregroundDrawBuffer][y][0] |= tempBitmask;
+        foregroundBitmap[foregroundDrawBuffer][y][index] |= tempBitmask;
     } else {
         tempBitmask = ~(0x80000000 >> x);
-        foregroundBitmap[foregroundDrawBuffer][y][0] &= tempBitmask;
+        foregroundBitmap[foregroundDrawBuffer][y][index] &= tempBitmask;
     }
 }
 
@@ -99,13 +101,13 @@ void SmartMatrix::drawForegroundChar(int16_t x, int16_t y, char character, bool 
 }
 
 void SmartMatrix::drawForegroundString(int16_t x, int16_t y, const char text [], bool opaque) {
-    // limit text to 10 chars, why?
-    for (int i = 0; i < 10; i++) {
-        char character = text[i];
-        if (character == '\0')
-            return;
+    int16_t i=0;
 
-        drawForegroundChar(i * foregroundfont->Width + x, y, character, opaque);
+    while(*text != '\0' && *text != '\n')
+    {
+        drawForegroundChar(i * foregroundfont->Width + x, y, *text, opaque);
+        ++i;
+        ++text;
     }
 }
 
@@ -132,8 +134,6 @@ void TextScroller::scrollText(const char inputtext[], int numScrolls) {
     text = inputtext;
     textLen = length;
     scrollCounter = numScrolls;
-
-    textWidth = (textlen * scrollFont->Width) - 1;
 
     setScrollMinMax();
 }
@@ -170,7 +170,9 @@ void TextScroller::stopScrollText(void) {
 }
 
 void TextScroller::setScrollMinMax(void) {
-   switch (scrollMode) {
+    int textWidth = (textLen * scrollFont->Width) - 1;
+
+    switch (scrollMode) {
     case wrapForward:
     case bounceForward:
     case bounceReverse:
@@ -253,12 +255,13 @@ bool TextScroller::updateScrolling()
 
 bool TextScroller::drawFramebuffer(size_t id)
 {
-    int j, k;
+    int j, k, l, stride;
     int charPosition, textPosition, fontLocation;
     uint8_t charY0, charY1;
 
 
-	hasForeground = false;
+    stride = SmartMatrix::screenConfig.localWidth / 32;
+    hasForeground = false;
 
     for (j = 0; j < SmartMatrix::screenConfig.localHeight; j++) {
 
@@ -289,7 +292,7 @@ bool TextScroller::drawFramebuffer(size_t id)
         }
 
 
-        while (textPosition < textlen && charPosition < SmartMatrix::screenConfig.localWidth) {
+        while (textPosition < textLen && charPosition < SmartMatrix::screenConfig.localWidth) {
             uint32_t tempBitmask;
 
             // lookup bitmap location for character glyph
@@ -299,10 +302,14 @@ bool TextScroller::drawFramebuffer(size_t id)
             for (k = charY0; k < charY1; k++) {
                 // read in uint8, shift it to be in MSB (font is in the top bits of the uint32)
                 tempBitmask = getBitmapFontRowAtXY(fontLocation, k, scrollFont) << 24;
-                if (charPosition < 0)
-                    foregroundBitmap[foregroundRefreshBuffer][j + k - charY0][0] |= tempBitmask << -charPosition;
-                else
-                    foregroundBitmap[foregroundRefreshBuffer][j + k - charY0][0] |= tempBitmask >> charPosition;
+                for (l = 0; l < stride; ++l) {
+                    // character position relative to panel l
+                    int panelPosition = charPosition - l * 32;
+                    if (panelPosition > -8 && panelPosition < 0)
+                        foregroundBitmap[foregroundRefreshBuffer][j + k - charY0][l] |= tempBitmask << -panelPosition;
+                    else if (panelPosition >= 0 && panelPosition < 32)
+                        foregroundBitmap[foregroundRefreshBuffer][j + k - charY0][l] |= tempBitmask >> panelPosition;
+                }
 
                 if(tempBitmask)
                     foregroundColorLines[foregroundRefreshBuffer][j + k - charY0] = (uint8_t)id;
