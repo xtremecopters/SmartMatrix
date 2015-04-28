@@ -26,10 +26,14 @@
 
 #include "Arduino.h"
 #include <stdint.h>
+#include "ringbuffer.h"
 
 // include one of the MatrixHardware_*.h files here:
-#include "MatrixHardware_KitV1_32x32.h"
-//#include "MatrixHardware_KitV1_16x32.h"
+#include "MatrixHardware_KitV1_16x32.h"
+//#include "MatrixHardware_KitV1_32x32.h"
+//#include "MatrixHardware_KitV1_128x32.h"
+
+
 class SmartMatrix;
 class TextScroller;
 
@@ -44,6 +48,19 @@ typedef enum ScrollMode {
     off,
     wrapForwardFromLeft,
 } ScrollMode;
+
+// TextScroller callback events
+enum class eScrollerEvent
+{
+	None = 0,				// No event occurred.
+	Stopped,				// Scroller stopped because numScrolls reached zero.
+	FIFOAvailable,			// One or more FIFO slots are available
+	FIFOEmpty				// All FIFO slots are available and scroller has stopped.
+};
+
+typedef void (*scroller_cb)(TextScroller *scroller, eScrollerEvent event);
+
+
 
 
 // font
@@ -142,6 +159,8 @@ public:
 	unsigned char		framesPerScroll			= 4;
 	unsigned char		frameCurrent			= 0;
 	bool				hasForeground			= false;
+	bool				ringEnabled				= false;
+	char				ringDelimiter			= '\n';
 	int					textLen					= 0;
 	int					fontTopOffset			= 1;
 	int					fontLeftOffset			= 1;
@@ -149,13 +168,20 @@ public:
 	int					scrollMin;
 	int					scrollMax;
 	int					scrollPosition;
+	struct
+	{
+		int				x0, y0;											// top-left of drawing rectangle
+		int				x1, y1;											// bottom-right of drawing rectangle
+	}					bounds;
+	scroller_cb			cbEvents				= NULL;					// 
 
-	const char			*text					= NULL;
 	const bitmap_font	*scrollFont				= &apple5x7;
 	SmartMatrix			*matrix					= NULL;
 
 	rgb24				textColor				= { 0xff, 0xff, 0xff };
 	ScrollMode			scrollMode				= bounceForward;
+
+	RingBuffer			text;
 
 
 	void setup(bool start);
@@ -174,11 +200,17 @@ public:
 	void setScrollOffsetFromTop(int offset);
 	void setScrollStartOffsetFromLeft(int offset);
 	void stopScrollText(void);
+	void setScrollBoundary(int x0, int y0, int x1, int y1)
+		{ bounds = {x0, y0, x1, y1}; }
+	void setRingBuffer(uint8_t *buffer, size_t size);
+	size_t appendRing(const char *text);
+	bool getRingStatus(size_t &used, size_t &room);
 
 	// returns positive number indicating number of loops left if running
 	// returns  0 if stopped
 	// returns -1 if continuously scrolling
 	int  getScrollStatus(void) const						{ return scrollCounter; }
+	void setEventCallback(scroller_cb func)					{ cbEvents = func; }
 
 
 	bool updateScrolling();

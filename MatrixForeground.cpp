@@ -125,17 +125,30 @@ void SmartMatrix::drawForegroundMonoBitmap(int16_t x, int16_t y, uint8_t width, 
 
 
 TextScroller::TextScroller(SmartMatrix *matrix)
- :	matrix(matrix)
+ :	bounds({ 0, 0, MATRIX_WIDTH -1, MATRIX_HEIGHT -1 }),
+	matrix(matrix)
 {
 }
 
 void TextScroller::scrollText(const char inputtext[], int numScrolls) {
-    int length = strlen((const char *)inputtext);
-    text = inputtext;
-    textLen = length;
-    scrollCounter = numScrolls;
+    if(!inputtext)
+		return;
 
-    setScrollMinMax();
+	stopScrollText();
+
+	if(!ringEnabled)
+	{
+		// reinitialize ring buffer with passed buffer
+		textLen = strlen(inputtext);
+		text.init((void *)inputtext, textLen);
+		text.write(NULL, textLen);
+
+		setup(true);
+		scrollCounter = numScrolls;
+	} else
+	{
+		appendRing(inputtext);
+	}
 }
 
 // TODO: recompute stuff after changing mode, font, etc
@@ -163,40 +176,105 @@ void TextScroller::setScrollStartOffsetFromLeft(int offset) {
 // stops the scrolling text on the next refresh
 void TextScroller::stopScrollText(void) {
     // setup conditions for ending scrolling:
-    // scrollcounter is next to zero
-    scrollCounter = 1;
+    // scrollCounter is zero
+    scrollCounter = 0;
     // position text at the end of the cycle
     scrollPosition = scrollMin;
+
+    if(ringEnabled)
+	{
+        text.reset();
+		textLen = 0;
+	}
 }
 
-void TextScroller::setScrollMinMax(void) {
-    int textWidth = (textLen * scrollFont->Width) - 1;
+void TextScroller::setRingBuffer(uint8_t *buffer, size_t size)
+{
+	stopScrollText();
+	if(buffer && size)
+	{
+		text.init(buffer, size);
+		ringEnabled = true;
+	} else
+	{
+		text.init(NULL, 0);
+		ringEnabled = false;
+	}
+}
 
-    switch (scrollMode) {
-    case wrapForward:
-    case bounceForward:
-    case bounceReverse:
-    case wrapForwardFromLeft:
-        scrollMin = -textWidth;
-        scrollMax = SmartMatrix::screenConfig.localWidth;
+size_t TextScroller::appendRing(const char *_text)
+{
+	if(!ringEnabled)
+		return 0;
 
-        scrollPosition = scrollMax;
 
-        if (scrollmode == bounceReverse)
-            scrollPosition = scrollMin;
-        else if(scrollmode == wrapForwardFromLeft)
-            scrollPosition = fontLeftOffset;
+	bool start = (textLen == 0);
 
-        // TODO: handle special case - put content in fixed location if wider than window
+	text += _text;
+	setup(start);
 
-        break;
+	return text.remain();
+}
 
-    case stopped:
-    case off:
-        scrollMin = scrollMax = scrollPosition = 0;
-        break;
-    }
+bool TextScroller::getRingStatus(size_t &used, size_t &room)
+{
+	used = text.size();
+	room = text.remain();
+	return ringEnabled;
+}
 
+void TextScroller::setup(bool start)
+{
+	if(ringEnabled && start)
+		textLen = text.size();
+
+
+	unsigned int textWidth = (textLen * scrollFont->Width);// -1;
+
+	switch(scrollMode) {
+		case wrapForward:
+		case bounceForward:
+		case bounceReverse:
+		case wrapForwardFromLeft:
+		{
+			// don't continue setup when ringed text is already scrolled enough that could
+			// make the new text visually pop into place. In such a case the newly appended
+			// text will wait until already visible items have scrolled off screen.
+			if(ringEnabled && !start && !((scrollMax - scrollPosition) < (textLen * scrollFont->Width)))
+				break;
+
+			if(ringEnabled)
+			{
+				textLen = text.size();
+				textWidth = (textLen * scrollFont->Width);// -1;
+			}
+
+			scrollMin = bounds.x0 - (int)textWidth;
+			scrollMax = bounds.x1 + 1;// matrix->screenConfig.localWidth;
+
+			if(!start)
+				break;
+
+			scrollPosition = scrollMax;
+
+			if(scrollMode == bounceReverse)
+				scrollPosition = scrollMin;
+			else if(scrollMode == wrapForwardFromLeft)
+				scrollPosition = fontLeftOffset;
+
+			// TODO: handle special case - put content in fixed location if wider than window
+
+			if(ringEnabled)
+				scrollCounter = 1;
+			break;
+		}
+
+		case stopped:
+		case off:
+		default:
+			scrollMin = scrollMax = scrollPosition = 0;
+			break;
+	}
 }
 
 bool TextScroller::updateScrolling()
@@ -212,12 +290,39 @@ bool TextScroller::updateScrolling()
     switch (scrollMode) {
     case wrapForward:
     case wrapForwardFromLeft:
-        scrollPosition--;
-        if(scrollPosition <= scrollMin) {
-            scrollPosition = scrollMax;
-            if(scrollCounter > 0) scrollCounter--;
-        }
-        break;
+	{
+		scrollPosition--;
+		if(scrollPosition <= scrollMin) {
+			scrollPosition = scrollMax;
+			if(scrollCounter > 0) scrollCounter--;
+		}
+
+		if(!ringEnabled)
+			break;
+
+		if(!scrollCounter && !text.empty())
+		{
+			setup(true);
+			break;
+		}
+
+		if((scrollPosition - bounds.x0) > -1)
+			break;
+
+		int oschar = abs(scrollPosition - bounds.x0) / scrollFont->Width;
+		if(text[oschar] == ringDelimiter)
+		{
+			text	-= oschar +1;
+			textLen -= oschar +1;
+
+			scrollPosition	+= scrollFont->Width * oschar;
+			scrollMin		+= scrollFont->Width * (oschar +1);
+
+			if(cbEvents && oschar)
+				cbEvents(this, (text.empty()) ? eScrollerEvent::FIFOEmpty : eScrollerEvent::FIFOAvailable);
+		}
+		break;
+	}
 
     case bounceForward:
         scrollPosition--;
@@ -243,8 +348,12 @@ bool TextScroller::updateScrolling()
     }
 
     // done scrolling - move text off screen and disable
-    if (!scrollCounter) {
+    if (!scrollCounter)
+	{
         resetScrolls = true;
+
+		if(cbEvents)
+			cbEvents(this, eScrollerEvent::Stopped);
     }
 
     // for now, fill the bitmap fresh with each update
@@ -255,20 +364,29 @@ bool TextScroller::updateScrolling()
 
 bool TextScroller::drawFramebuffer(size_t id)
 {
-    int j, k, l, stride;
-    int charPosition, textPosition, fontLocation;
+    int j, jLimit, k, l, strideStart, strideEnd;
+    int charPosition, textPosition;
     uint8_t charY0, charY1;
+	uint32_t maskLeft	= ((~0UL) >> (bounds.x0 % 32));
+	uint32_t maskRight	= ((~0UL) << (31 - (bounds.x1 % 32)));
 
 
-    stride = SmartMatrix::screenConfig.localWidth / 32;
-    hasForeground = false;
+	strideStart	= bounds.x0 / 32;
+//	strideEnd	= matrix->screenConfig.localWidth / 32;
+	strideEnd	= bounds.x1 / 32;
+	if(bounds.x1 % 32)
+		strideEnd += 1;
 
-    for (j = 0; j < SmartMatrix::screenConfig.localHeight; j++) {
+	hasForeground = false;
 
-        // skip rows without text
-        if (j < fontTopOffset || j >= fontTopOffset + scrollFont->Height)
-            continue;
+	// skip rows without text
+	jLimit = fontTopOffset + scrollFont->Height;
+	jLimit = (jLimit > SmartMatrix::screenConfig.localHeight) ? SmartMatrix::screenConfig.localHeight : jLimit;
+	jLimit = (jLimit < 0)? 0 : jLimit;
+	j = (fontTopOffset > 0)? fontTopOffset : 0;
 
+	for(; j < jLimit; j++)
+	{
         hasForeground = true;
         // now in row with text
         // find the position of the first char
@@ -276,8 +394,10 @@ bool TextScroller::drawFramebuffer(size_t id)
         textPosition = 0;
 
         // move to first character at least partially on screen
-        while (charPosition + scrollFont->Width < 0 ) {
-            charPosition += scrollFont->Width;
+        while ((charPosition - bounds.x0 + scrollFont->Width) < 0 )
+		{
+			if(matrix->getBitmapFontLocation(text[textPosition], scrollFont) > -1)
+				charPosition += scrollFont->Width;
             textPosition++;
         }
 
@@ -291,32 +411,48 @@ bool TextScroller::drawFramebuffer(size_t id)
             charY1 = scrollFont->Height;
         }
 
+        while((textPosition < textLen) && (charPosition < bounds.x1))
+		{
+            uint32_t tempBitmask, mask2;
+			int fontLocation;
 
-        while (textPosition < textLen && charPosition < SmartMatrix::screenConfig.localWidth) {
-            uint32_t tempBitmask;
+			if((fontLocation = matrix->getBitmapFontLocation(text[textPosition], scrollFont)) > -1)
+			{
+				// draw character from top to bottom
+				for(k = charY0; k < charY1; k++)
+				{
+					// read in uint8, shift it to be in MSB (font is in the top bits of the uint32)
+					tempBitmask = matrix->getBitmapFontRowAtXY(fontLocation, k, scrollFont) << 24;
+					for(l = strideStart; l < strideEnd; ++l)
+					{
+						// character position relative to panel l
+						int panelPosition = charPosition - l * 32;
+						if(panelPosition > -8 && panelPosition < 0)
+						{
+							mask2 = (tempBitmask << -panelPosition);
+						}
+						else if(panelPosition >= 0 && panelPosition < 32)
+						{
+							mask2 = (tempBitmask >> panelPosition);
+						} else
+							continue;
 
-            // lookup bitmap location for character glyph
-            fontLocation = getBitmapFontLocation(text[textPosition], scrollFont);
+						if(charPosition < bounds.x0)
+							mask2 &= maskLeft;
+						else if(charPosition + scrollFont->Width >= bounds.x1)
+							mask2 &= maskRight;
 
-            // draw character from top to bottom
-            for (k = charY0; k < charY1; k++) {
-                // read in uint8, shift it to be in MSB (font is in the top bits of the uint32)
-                tempBitmask = getBitmapFontRowAtXY(fontLocation, k, scrollFont) << 24;
-                for (l = 0; l < stride; ++l) {
-                    // character position relative to panel l
-                    int panelPosition = charPosition - l * 32;
-                    if (panelPosition > -8 && panelPosition < 0)
-                        foregroundBitmap[foregroundRefreshBuffer][j + k - charY0][l] |= tempBitmask << -panelPosition;
-                    else if (panelPosition >= 0 && panelPosition < 32)
-                        foregroundBitmap[foregroundRefreshBuffer][j + k - charY0][l] |= tempBitmask >> panelPosition;
-                }
+						foregroundBitmap[foregroundRefreshBuffer][j + k - charY0][l] |= mask2;
+					}
 
-                if(tempBitmask)
-                    foregroundColorLines[foregroundRefreshBuffer][j + k - charY0] = (uint8_t)id;
-            }
+					if(tempBitmask)
+						foregroundColorLines[foregroundRefreshBuffer][j + k - charY0] = (uint8_t)id;
+				}
 
-            // get set up for next character
-            charPosition += scrollFont->Width;
+				// get set up for next character
+				charPosition += scrollFont->Width;
+			}
+
             textPosition++;
         }
 
