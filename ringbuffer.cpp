@@ -2,6 +2,8 @@
  * Ring Buffer implementation for C99 and C++98.
  *
  * Copyright (C) 2014-2015 The Steele Group, LLC  All Rights Reserved.
+ *
+ * Released under MIT license.
  */
 
 #if __cplusplus
