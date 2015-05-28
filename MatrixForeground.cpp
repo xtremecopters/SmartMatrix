@@ -176,8 +176,8 @@ void TextScroller::setScrollStartOffsetFromLeft(int offset) {
 // stops the scrolling text on the next refresh
 void TextScroller::stopScrollText(void) {
     // setup conditions for ending scrolling:
-    // scrollCounter is zero
-    scrollCounter = 0;
+    // scrollcounter is next to zero
+    scrollCounter = 1;
     // position text at the end of the cycle
     scrollPosition = scrollMin;
 
